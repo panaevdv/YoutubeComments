@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29306.81
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DBBot", "DBBot\DBBot.csproj", "{38EE9C32-8B13-4375-9D6D-F90A87CC421B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{38EE9C32-8B13-4375-9D6D-F90A87CC421B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{38EE9C32-8B13-4375-9D6D-F90A87CC421B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{38EE9C32-8B13-4375-9D6D-F90A87CC421B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{38EE9C32-8B13-4375-9D6D-F90A87CC421B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {9B37795C-52D9-45B1-A5BC-A61E92DF7234}
+	EndGlobalSection
+EndGlobal
