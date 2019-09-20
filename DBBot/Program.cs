@@ -35,21 +35,16 @@ namespace DBBot
         private static string baseVideoListUrl = @"http://hsm.ugatu.su/yt/reports/?cube=1&userId=";
         private static string videoListUrl;
         private static List<string> toWatch = new List<string>();
-        private static UserConfig current;
+        private static List<string> watchedVideos = new List<string>();
+        private static UserConfig current = new UserConfig();
+        private static bool isWatched = false;
+        private static bool toClose = false;
+        private static string[] stihi;
         static async Task Main(string[] args)
         {
-            /*await GetVideoList();
-            Console.WriteLine("Done");*/
-            await GetVideoList();
-            Console.WriteLine("Done");
+            await Run();
         }
 
-        /*
-        private static async Task Test()
-        {
-            await Task.Delay(10000);
-            Console.WriteLine("10 sec");
-        }*/
 
         private static async Task Run()
         {
@@ -58,9 +53,11 @@ namespace DBBot
                 Console.WriteLine("Авторизируйтесь через свой Google-аккаунт для просмотра ролика.\n" +
                     "Страница должна автоматически открыться в браузере по умолчанию.");
                 await GetOAuth();
+                ReadPoems();
                 Console.WriteLine("Получаем список непросмотренных видео...");
                 if (!(File.Exists(videoToWatchListPath) & CheckVideoList()))
                     await GetVideoList();
+                await Watch();
             }
         }
 
@@ -69,18 +66,75 @@ namespace DBBot
             double sec = 0;
             foreach (string s in toWatch)
             {
+                if (toClose)
+                {
+                    WriteVideoList();
+                    Environment.Exit(0);
+                }
+                VideoUrl = s;
                 sec = await GetVideoDuration(s);
-
-                await SendComment(s);
+                string id = await SendComment(s);
+                TimerCallback tm = new TimerCallback(UpdateComment);
+                // создаем таймер
+                Timer timer = new Timer(tm, id, 0, (int)sec);
+                DateTime now = DateTime.Now;
+                now = now.AddMilliseconds(sec + 1000);
+                Thread timeThread = new Thread(new ParameterizedThreadStart(TimeLeft));
+                Thread typeInThread = new Thread(ReadEnd);
+                timeThread.Start(now);
+                typeInThread.Start();
+                timeThread.Join();
             }
         }
+
+        private static void ReadPoems()
+        {
+            stihi = File.ReadAllLines(Directory.GetCurrentDirectory() + "\\stihi.txt");
+        }
+
+        private static string GetRandomPoem()
+        {
+            Random r = new Random();
+            return stihi[r.Next(stihi.Length - 1)];
+        }
+
+        public static void ReadEnd()
+        {
+            ConsoleKeyInfo key = Console.ReadKey();
+            while (key.Key != ConsoleKey.Escape)
+            {
+                key = Console.ReadKey();
+            }
+            toClose = true;
+        }
+
+        public static void TimeLeft(object Ctime)
+        {
+            DateTime time = (DateTime)Ctime;
+            DateTime currentTime = DateTime.Now;
+            TimeSpan interval = time - currentTime;
+            while (interval.TotalSeconds > 0)
+            {
+                Console.Clear();
+                currentTime = DateTime.Now;
+                interval = time - currentTime;
+                if (toClose)
+                    Console.WriteLine("Просмотр будет остановлен после просмотра текущего ролика.");
+                else
+                    Console.WriteLine("Если вы хотите остановить просмотр, то нажмите Esc");
+                Console.WriteLine("Смотрим ролик: " + VideoUrl);
+                Console.WriteLine("До конца просмотра осталось: " + (int)interval.TotalSeconds + "sec");
+                Thread.Sleep(1000);
+            };
+            isWatched = true;
+        }
+
 
 
         private static bool Check()
         {
             if (!File.Exists(filePath))
             {
-                File.Create(filePath);
                 ReadId();
             }
             ReadFromConfig();
@@ -124,16 +178,37 @@ namespace DBBot
             return false;
         }
 
+        private static void WriteVideoList()
+        {
+            StringBuilder sb = new StringBuilder();
+            foreach (string s in toWatch)
+            {
+                sb.AppendLine(s);
+            }
+            File.WriteAllText(videoToWatchListPath, sb.ToString());
+        }
+
         // Считываем список видео из файла
         private static void ReadVideoList()
         {
             toWatch = new List<string>();
-            using (StreamReader rw = new StreamReader(videoToWatchListPath))
+            if (File.Exists(videoToWatchListPath))
+                using (StreamReader rw = new StreamReader(videoToWatchListPath))
+                {
+                    while (!rw.EndOfStream)
+                    {
+                        toWatch.Add(rw.ReadLine());
+                    }
+                }
+        }
+
+        private static void ReadWatchedVideoList()
+        {
+            watchedVideos = new List<string>();
+            using (StreamReader rw = new StreamReader(watchedVideoPath))
             {
                 while (!rw.EndOfStream)
-                {
-                    toWatch.Add(rw.ReadLine());
-                }
+                    watchedVideos.Add(rw.ReadLine());
             }
         }
 
@@ -142,6 +217,7 @@ namespace DBBot
             HttpClient client = new HttpClient();
             try
             {
+                VideoUrl = baseVideoListUrl + current.Id;
                 HttpResponseMessage resp = await client.GetAsync(VideoUrl);
                 var responseString = await resp.Content.ReadAsStringAsync();
                 HtmlDocument doc = new HtmlDocument();
@@ -159,14 +235,13 @@ namespace DBBot
                 // Записываем непросмотренные видео в файл
                 foreach (HtmlNode n in nodes)
                 {
-                    toWatch.Add(regex.Matches(n.ParentNode.InnerHtml)[0].Value.Split('=')[1]);
+                    var video = regex.Matches(n.ParentNode.InnerHtml)[0].Value.Split('=')[1];
+                    toWatch.Add(video);
                 }
                 foreach (String s in toWatch)
                 {
                     sb.AppendLine(s);
                 }
-                if (!File.Exists(videoToWatchListPath))
-                    File.Create(videoToWatchListPath);
                 File.WriteAllText(videoToWatchListPath, sb.ToString());
 
                 sb.Clear();
@@ -175,8 +250,6 @@ namespace DBBot
                 {
                     sb.AppendLine(regex.Matches(n.ParentNode.InnerHtml)[0].Value.Split('=')[1]);
                 }
-                if (!File.Exists(watchedVideoPath))
-                    File.Create(watchedVideoPath);
                 Thread.Sleep(1000);
                 File.WriteAllText(watchedVideoPath, sb.ToString());
                 sb.Clear();
@@ -218,7 +291,7 @@ namespace DBBot
             CommentThreadSnippet snippet = new CommentThreadSnippet();
             Comment topLevelComment = new Comment();
             CommentSnippet commentSnippet = new CommentSnippet();
-            commentSnippet.TextOriginal = "Hello, Boys";
+            commentSnippet.TextOriginal = GetRandomPoem();
             topLevelComment.Snippet = commentSnippet;
             snippet.TopLevelComment = topLevelComment;
             snippet.VideoId = url;
@@ -267,8 +340,9 @@ namespace DBBot
         }
 
         // Редактирование комментария
-        private static async Task UpdateComment(string commentID)
+        private static async void UpdateComment(object commentID)
         {
+            string id = (string)commentID;
             // Аналогично созданию, только commentThread.Id = комментарию
             var youtubeService = new YouTubeService(new BaseClientService.Initializer()
             {
@@ -280,17 +354,19 @@ namespace DBBot
             CommentThreadSnippet snippet = new CommentThreadSnippet();
             Comment topLevelComment = new Comment();
             CommentSnippet commentSnippet = new CommentSnippet();
-            commentSnippet.TextOriginal = "Old Comment";
+            commentSnippet.TextOriginal = GetRandomPoem();
             topLevelComment.Snippet = commentSnippet;
             snippet.TopLevelComment = topLevelComment;
             snippet.VideoId = VideoUrl;
-            commentThread.Id = commentID;
+            commentThread.Id = id;
             commentThread.Snippet = snippet;
             // Создание реквеста с данным комментарием
-            var query = youtubeService.CommentThreads.Insert(commentThread, "snippet");
+            var query = youtubeService.CommentThreads.Update(commentThread, "snippet");
             try
             {
                 var resp = await query.ExecuteAsync();
+                File.AppendAllText(watchedVideoPath, VideoUrl);
+                toWatch.Remove(VideoUrl);
             }
             catch (Exception ex)
             {
@@ -301,8 +377,6 @@ namespace DBBot
 
         private static void ReadId()
         {
-            if (!File.Exists(filePath))
-                File.Create(filePath);
             Console.WriteLine("Введите номер зачетной книжки:");
             current.Id = Console.ReadLine();
             videoListUrl = baseVideoListUrl + current.Id;
@@ -318,6 +392,11 @@ namespace DBBot
         private static void ReadFromConfig()
         {
             string json = File.ReadAllText(filePath);
+            if (json == string.Empty)
+            {
+                ReadId();
+                return;
+            }
             current = JsonConvert.DeserializeObject<UserConfig>(json);
             videoListUrl = baseVideoListUrl + current.Id;
         }
