@@ -144,18 +144,16 @@ namespace DBBot
                     Console.WriteLine("Something is wrong with token. Please restart application.");
                     Environment.Exit(2);
                 }
-                sec += r.Next(30);
+                sec += r.Next(30000);
                 string id = await SendComment(s);
-                TimerCallback tm = new TimerCallback(UpdateComment);
-                // создаем таймер
-                Timer timer = new Timer(tm, id, (int)sec, Timeout.Infinite);
                 DateTime now = DateTime.Now;
                 now = now.AddMilliseconds(sec);
                 Thread timeThread = new Thread(new ParameterizedThreadStart(TimeLeft));
                 Thread typeInThread = new Thread(ReadEnd);
                 timeThread.Start(now);
                 typeInThread.Start();
-                event1.WaitOne();
+                Thread.Sleep((int)(sec));
+                await UpdateComment(id);
             }
             foreach (string s in sessionVideos)
             {
@@ -438,7 +436,7 @@ namespace DBBot
         }
 
         // Редактирование комментария
-        private static async void UpdateComment(object commentID)
+        private static async Task UpdateComment(object commentID)
         {
             string id = (string)commentID;
             // Аналогично созданию, только commentThread.Id = комментарию
@@ -464,7 +462,6 @@ namespace DBBot
             {
                 var resp = await query.ExecuteAsync();
                 Console.WriteLine("Комментарий изменен");
-                event1.Set();
             }
             catch (Exception ex)
             {
