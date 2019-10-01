@@ -15,6 +15,7 @@ using System.Xml;
 using Newtonsoft.Json;
 using System.Text.RegularExpressions;
 using System.Text;
+using System.Net;
 
 
 // XPATH FOR ALL VIDEOS //a[contains(@href,'watch')]
@@ -24,25 +25,31 @@ namespace DBBot
 {
     class Program
     {
-
+        private static string AccountsUrl = @"https://vex-core.ru/wtf/Accounts.txt";
+        private static string Accounts;
+        private static string UserChannelId;
         public static string filePath = Directory.GetCurrentDirectory() + "\\config.txt";
         public static string videoToWatchListPath = Directory.GetCurrentDirectory() + "\\videoToWatch.txt";
         public static string watchedVideoPath = Directory.GetCurrentDirectory() + "\\watchedVideo.txt";
         private static UserCredential credential;
         private static string VideoUrl;
-        private static string key = "AIzaSyCU5Ttu6PlH6Klap5Z6DmDExhxz9g9ZTeY";
+        private static string key = "AIzaSyDOasALbFL24OdQAil1g8BnfRKljodlMT4";
         //private static string login = "17130445";
         private static string baseVideoListUrl = @"http://hsm.ugatu.su/yt/reports/?cube=1&userId=";
         private static string videoListUrl;
         private static List<string> toWatch = new List<string>();
         private static List<string> watchedVideos = new List<string>();
+        private static List<string> sessionVideos = new List<string>();
         private static UserConfig current = new UserConfig();
         private static bool isWatched = false;
         private static bool toClose = false;
         private static string[] stihi;
+        private static AutoResetEvent event1 = new AutoResetEvent(false);
         static async Task Main(string[] args)
         {
             await Run();
+            Console.WriteLine("Нажмите любую клавишу...");
+            Console.ReadKey();
         }
 
 
@@ -53,6 +60,16 @@ namespace DBBot
                 Console.WriteLine("Авторизируйтесь через свой Google-аккаунт для просмотра ролика.\n" +
                     "Страница должна автоматически открыться в браузере по умолчанию.");
                 await GetOAuth();
+                Console.WriteLine("Авторизация прошла успешно.");
+                await GetAccounts();
+                await GetYoutubeAccountId();
+
+                if (!CheckLicense())
+                {
+                    Console.WriteLine("Данная зачетка и выбранный гугл аккаунт отсутствуют в покупателях.\n Номер зачетки: " +
+                        current.Id + " ID канала: " + UserChannelId);
+                    return;
+                }
                 ReadPoems();
                 Console.WriteLine("Получаем список непросмотренных видео...");
                 if (!(File.Exists(videoToWatchListPath) & CheckVideoList()))
@@ -61,30 +78,91 @@ namespace DBBot
             }
         }
 
+        private static bool CheckLicense()
+        {
+            string query = current.Id + ":" + UserChannelId;
+            return (Accounts.Contains(query));
+        }
+
+        private static async Task GetYoutubeAccountId()
+        {
+            var youtubeService = new YouTubeService(new BaseClientService.Initializer()
+            {
+                ApiKey = key,
+                HttpClientInitializer = credential,
+                ApplicationName = "YoutubeApp"
+            });
+            var query = youtubeService.Channels.List("id");
+            query.Mine = true;
+            var resp = await query.ExecuteAsync();
+            if (resp.Items[0] != null & resp.Items[0].Id != String.Empty)
+                UserChannelId = resp.Items[0].Id;
+        }
+
+        private static async Task GetAccounts()
+        {
+            HttpClient client = new HttpClient();
+            try
+            {
+                HttpResponseMessage resp = await client.GetAsync(AccountsUrl);
+                Accounts = await resp.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+            /*
+            FtpWebRequest request = (FtpWebRequest)WebRequest.Create("ftp://speedtest.tele2.net/20MB.zip");
+            request.Method = WebRequestMethods.Ftp.DownloadFile;
+            //request.Credentials = new NetworkCredential("anonymous", "janeDoe@contoso.com");
+            FtpWebResponse response = (FtpWebResponse)request.GetResponse();
+            Stream responseStream = response.GetResponseStream();
+            using (StreamReader reader = new StreamReader(responseStream))
+            {
+                Accounts = reader.ReadToEnd();
+            }*/
+        }
+
+
         private static async Task Watch()
         {
+            Random r = new Random();
             double sec = 0;
             foreach (string s in toWatch)
             {
                 if (toClose)
                 {
-                    WriteVideoList();
-                    Environment.Exit(0);
+                    break;
                 }
+                isWatched = false;
                 VideoUrl = s;
+                File.AppendAllText(watchedVideoPath, VideoUrl + Environment.NewLine);
+                sessionVideos.Add(VideoUrl);
                 sec = await GetVideoDuration(s);
+                if (sec == 0)
+                {
+                    Console.WriteLine("Something is wrong with token. Please restart application.");
+                    Environment.Exit(2);
+                }
+                sec += r.Next(30);
                 string id = await SendComment(s);
                 TimerCallback tm = new TimerCallback(UpdateComment);
                 // создаем таймер
-                Timer timer = new Timer(tm, id, 0, (int)sec);
+                Timer timer = new Timer(tm, id, (int)sec, Timeout.Infinite);
                 DateTime now = DateTime.Now;
-                now = now.AddMilliseconds(sec + 1000);
+                now = now.AddMilliseconds(sec);
                 Thread timeThread = new Thread(new ParameterizedThreadStart(TimeLeft));
                 Thread typeInThread = new Thread(ReadEnd);
                 timeThread.Start(now);
                 typeInThread.Start();
-                timeThread.Join();
+                event1.WaitOne();
             }
+            foreach (string s in sessionVideos)
+            {
+                toWatch.Remove(s);
+            }
+            WriteVideoList();
+            Environment.Exit(0);
         }
 
         private static void ReadPoems()
@@ -95,7 +173,8 @@ namespace DBBot
         private static string GetRandomPoem()
         {
             Random r = new Random();
-            return stihi[r.Next(stihi.Length - 1)];
+            int numb = r.Next(stihi.Length - 1);
+            return stihi[numb] == String.Empty ? GetRandomPoem() : stihi[numb];
         }
 
         public static void ReadEnd()
@@ -144,6 +223,7 @@ namespace DBBot
                 Console.WriteLine("Номер зачетной книжки: " + current.Id);
                 Console.WriteLine("Для запуска программы нажмите 1.\n" +
                     "Для смены номера зачетной книжки нажмите 2.\n" +
+                    "Для смены гугл аккаунта нажмите 3.\n" +
                     "Для выхода нажмите 0.");
                 input = Console.ReadLine();
                 switch (input)
@@ -158,6 +238,11 @@ namespace DBBot
                             ReadFromConfig();
                             break;
                         }
+                    case "3":
+                        {
+                            RemoveGoogleCredentials();
+                            break;
+                        }
                     case "0":
                         {
                             Environment.Exit(0);
@@ -168,6 +253,16 @@ namespace DBBot
             }
             return false;
         }
+
+        private static void RemoveGoogleCredentials()
+        {
+            System.IO.DirectoryInfo di = new DirectoryInfo(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)+"//ApplicationData");
+            foreach (FileInfo file in di.GetFiles())
+            {
+                file.Delete();
+            }
+        }
+
 
         // Проверяем, что есть непросмотренные видео
         private static bool CheckVideoList()
@@ -269,7 +364,9 @@ namespace DBBot
             {
                 credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
                     GoogleClientSecrets.Load(stream).Secrets,
-                    new[] { YouTubeService.Scope.YoutubeForceSsl
+                    new[] { YouTubeService.Scope.YoutubeForceSsl,
+                    YouTubeService.Scope.YoutubeReadonly
+
                     },
                     "user",
                     CancellationToken.None,
@@ -301,6 +398,7 @@ namespace DBBot
             try
             {
                 var resp = await query.ExecuteAsync();
+                Console.WriteLine("Комментарий отправлен");
                 return resp.Id;
             }
             catch (Exception ex)
@@ -365,8 +463,8 @@ namespace DBBot
             try
             {
                 var resp = await query.ExecuteAsync();
-                File.AppendAllText(watchedVideoPath, VideoUrl);
-                toWatch.Remove(VideoUrl);
+                Console.WriteLine("Комментарий изменен");
+                event1.Set();
             }
             catch (Exception ex)
             {
