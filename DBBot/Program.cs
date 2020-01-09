@@ -33,7 +33,7 @@ namespace DBBot
         public static string watchedVideoPath = Directory.GetCurrentDirectory() + "\\watchedVideo.txt";
         private static UserCredential credential;
         private static string VideoUrl;
-        private static string key = "AIzaSyDOasALbFL24OdQAil1g8BnfRKljodlMT4";
+        private static string key = "YOUR GOOGLE API KEY";
         private static string baseVideoListUrl = @"http://hsm.ugatu.su/yt/reports/?cube=1&userId=";
         private static string videoListUrl;
         private static List<string> toWatch = new List<string>();
